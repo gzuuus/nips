@@ -13,7 +13,7 @@ This NIP defines a comprehensive protocol for implementing decentralized marketp
 ## Events and Kinds
 
 ### Product Listing (Kind: 30402)
-Following NIP-99's schema for product representation:
+Following [NIP-99](99.md)'s schema for product representation:
 
 ```jsonc
 {
@@ -314,6 +314,47 @@ Standard shipping option:
     ["date", "<unix-timestamp>"]
   ],
   "content": "Your order is being prepared for shipping."
+}
+```
+
+### Product Reviews (Kind: 31555)
+
+Following [NIP-85](https://github.com/nostr-protocol/nips/blob/b1432b705f553bde6c4eb5fcfde8525d2913b477/85.md) and [QTS](https://habla.news/u/arkinox@arkinox.tech/DLAfzJJpQDS4vj3wSleum) for the review schema:
+
+```
+{
+  "kind": 31555,
+  "tags": [
+    ["d", "a:<product-listing-kind>:<merchant-pubkey>:<product-listing-d-tag>"],
+    ["rating", “<0-or-1>”, "thumb"],
+    ["rating", "<0-or-1>", "<rating-label-1>"],
+    ["rating", "<0-or-1>", "<rating-label-2>"],
+    ...
+  ],
+  “content”: “<comment-on-product>”
+}
+```
+
+The `thumb` rating label MUST represent 50% of the score weight and be set as "good" (1) or "bad" (0), indicating the overall sentiment. Additional arbitrary rating labels can be added and would also be scored as "good" (1) or "bad" (0), but with equal weight across the remaining 50% of the rating. More granular scores between 0-1 can also be used without breaking compatibility.
+
+Rating calculation:
+
+Total Score = (Thumb × 0.5) + (0.5 × (∑(Additional Ratings) ÷ Number of Additional Ratings))
+
+Review Example:
+
+```
+{
+  "kind": 31555,
+  "tags": [
+    ["d", "a:<listing kind>:<merchant pubkey>:<listing d-tag>"],
+    ["rating", “1”, "thumb"],
+    ["rating", “1”, "value”], 
+    ["rating", "1", "quality”], 
+    ["rating", “0”, "delivery”], 
+    ["rating", “1”, "communication”],
+  ]
+  “content”: “Great product!”
 }
 ```
 
