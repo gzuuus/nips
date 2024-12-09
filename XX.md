@@ -25,16 +25,22 @@ Following [NIP-99](99.md)'s schema for product representation:
     ["title", "<product title>"],
     ["price", "<amount>", "<currency>", "<optional frequency>"],
     // Optional tags
-    ["shipping", "<shipping-option-id>"], // References to shipping options
+    ["shipping", "30406:<pubkey>:<d-tag>"], // References to shipping options
+    ["shipping", "30405:<pubkey>:<d-tag>"], // References to a product collection, in this case, shipping is inherited from the collection
     ["summary", "<short description>"],
+    ["stock", "<integer>"]
     ["image", "<url>", "<dimensions>"],
     ["location", "<location string>"],
     ["g", "<geo hash>"],
     ["t", "<category>"],
-    ["a", "<product-list-id>"] // Reference to product collection if applicable
+    ["a", "<30405>:<pubkey>:<d-tag>"] // Reference to product collection if applicable
   ]
 }
 ```
+
+#### Notes
+- Products are the highest level item in a market place
+- You can define the shipping option by referencing a shipping event, or a product collection, in this last ase the shipping options should be inherited from the collection and merge with the other shippings defined in the product if they exist
 
 ### Product Draft (Kind: 30403)
 Draft version of a product listing, following the same schema as Kind 30402:
@@ -49,6 +55,8 @@ Draft version of a product listing, following the same schema as Kind 30402:
   ]
 }
 ```
+#### Noted
+- This draft can be encrypted if the merchant doesnt want it to be public. In this the implementation SHOULD follow the convention for encrypted list described in [NIP-51](51.md)
 
 ### Product Collection (Kind: 30405)
 Using NIP-51 list format for grouping products:
@@ -61,13 +69,13 @@ Using NIP-51 list format for grouping products:
   "tags": [
     ["d", "<collection identifier>"],
     ["name", "<collection name>"],
-    ["a", "30402:<pubkey>:<product-id>"], // Product references
+    ["a", "30402:<pubkey>:<d-tag>"], // Product references
     // Optional tags
     ["image", "<collection image>"],
     ["summary", "<collection description>"],
     ["location", "<location string>"],
     ["g", "<geo hash>"],
-    ["shipping", "<shipping-option-id>"], // References to shipping options
+    ["shipping", "30406:<pubkey>:<d-tag>"], // References to shipping options
     ["currency", "<collection-currency>"]
   ]
 }
@@ -207,9 +215,9 @@ Standard shipping option:
     ["p", "<merchant-pubkey>"],
     ["subject", "order-info"],
     ["order", "<order-id>"],
-    ["item", "<product-id>", "<quantity>"],
-    ["item", "<product-id>", "<quantity>"], // Multiple items possible
-    ["shipping", "<shipping-option-id>"],
+    ["item", "30402:<pubkey>:<d-tag>", "<quantity>"],
+    ["item", "30402:<pubkey>:<d-tag>", "<quantity>"], // Multiple items possible
+    ["shipping", "30406:<pubkey>:<d-tag>"],
     ["amount", "<total-amount>"],
     ["address", "<shipping-address>"],
     ["email", "<customer-email>"],
@@ -246,7 +254,7 @@ Standard shipping option:
     ["subject", "order-payment"],
     ["order", "<order-id>"],
     ["amount", "<total-amount>"],
-    ["payment", "lightning", "<bolt11-invoice>"],
+    ["payment", "lightning", "<bolt11-invoice | bolt12-offer>"],
     ["payment", "bitcoin", "<btc-address>"],
     ["expiry", "<unix-timestamp>"]
   ],
@@ -261,7 +269,7 @@ Standard shipping option:
     ["p", "<merchant-pubkey>"],
     ["subject", "order-receipt"],
     ["order", "<order-id>"],
-    ["payment", "lightning", "<bolt11-invoice>", "<preimage>"],
+    ["payment", "lightning", "<bolt11-invoice | bolt12-offer>", "<preimage>"],
     // or
     ["payment", "bitcoin", "<btc-address>", "<txid>"],
     ["date", "<unix-timestamp>"]
@@ -307,13 +315,10 @@ Standard shipping option:
 {
   "kind": 14,
   "tags": [
-    ["p", "<buyer-pubkey>"],
+    ["p", "<buyer-pubkey | buyer-pubkey>"],
     ["subject", "<order-id | empty-string>"],
-    ["order", "<order-id>"],
-    ["status", "<order-status>"], // e.g., "confirmed", "processing", "completed"
-    ["date", "<unix-timestamp>"]
   ],
-  "content": "Your order is being prepared for shipping."
+  "content": "Some extra communication"
 }
 ```
 
@@ -343,7 +348,7 @@ Total Score = (Thumb × 0.5) + (0.5 × (∑(Additional Ratings) ÷ Number of Add
 
 Review Example:
 
-```
+```jsonc
 {
   "kind": 31555,
   "tags": [
