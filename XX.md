@@ -39,11 +39,16 @@ Following [NIP-99](99.md)'s schema for product representation:
     ["title", "<product title>"],
     ["price", "<amount>", "<currency>", "<optional frequency>"],
     // Optional tags
+    ["image", "<url>", "<dimensions>"],
+    ["summary", "<short description>"],
+    ["stock", "<integer>"], // Determines the amount of available stock
     ["shipping", "30406:<pubkey>:<d-tag>"], // References to shipping options
     ["shipping", "30405:<pubkey>:<d-tag>"], // References to a product collection, in this case, shipping is inherited from the collection
-    ["summary", "<short description>"],
-    ["stock", "<integer>"]
-    ["image", "<url>", "<dimensions>"],
+    ["type","<simple | variable | variation>", "<digital | physical>"], // Determines whether a product is a simple product, a variable product, or a variation of a variable product. The third element of the array determines whether the product is digital or physical. Default value (or if omitted): "simple and digital".
+    ["visivilty","<hidden | on-sale | pre-order>"], // Determines how the product should be displayed, default value (or if omitted): "on-sale
+    ["spec", "<spec-key>", "<spec-value>"], // E.g. spec-key: screen-size, spec-value: 21"
+    ["weight","<weight-value>", "<weight-measure-unit>"], // Weight units should follow ISO 80000-1 standard
+    ["dim","<dim-value>","<dim-measure-unit>"] // Dimension value should be expressed as "length x width x height", e.g. "3x3x3", using the "x" character as a delimiter. Units should be "mm", "cm", "m", following the ISO 80000-1 standard.
     ["location", "<location string>"],
     ["g", "<geo hash>"],
     ["t", "<category>"],
@@ -55,22 +60,6 @@ Following [NIP-99](99.md)'s schema for product representation:
 #### Notes
 - Products are the highest level item in a market place
 - You can define the shipping option by referencing a shipping event, or a product collection, in this last ase the shipping options should be inherited from the collection and merge with the other shippings defined in the product if they exist
-
-### Product Draft (Kind: 30403)
-Draft version of a product listing, following the same schema as Kind 30402:
-
-```jsonc
-{
-  "kind": 30403,
-  "created_at": <unix timestamp>,
-  "content": "<draft product description in markdown>",
-  "tags": [
-    // Same tag structure as Kind 30402
-  ]
-}
-```
-#### Noted
-- This draft can be encrypted if the merchant doesnt want it to be public. In this the implementation SHOULD follow the convention for encrypted list described in [NIP-51](51.md)
 
 ### Product Collection (Kind: 30405)
 Using NIP-51 list format for grouping products:
@@ -90,10 +79,13 @@ Using NIP-51 list format for grouping products:
     ["location", "<location string>"],
     ["g", "<geo hash>"],
     ["shipping", "30406:<pubkey>:<d-tag>"], // References to shipping options
-    ["currency", "<collection-currency>"]
+    ["currency", "<collection-currency>"] // Currency codes MUST follow the ISO 4217
   ]
 }
 ```
+
+### Drafts
+Users may want to save products or collections as private drafts before they are publicly visible, or while they are working on the details. To achieve this, clients MUST follow the [nip-37](https://github.com/nostr-protocol/nips/blob/master/37.md)
 
 ### Shipping Option (Kind: 30406)
 
@@ -108,7 +100,7 @@ This event type defines shipping methods, costs, and constraints. To ensure reli
     ["d", "<shipping identifier>"],
     ["name", "<shipping method name>"],
     ["price", "<base_cost>", "<currency>"],
-    ["zone", "<ISO 3166-1 alpha-2 country code>"],  // Can be repeated for multiple countries
+    ["country", "<ISO 3166-1 alpha-2 country code>"],  // Can be repeated for multiple countries
     ["region", "<ISO 3166-2 region code>"],         // Optional subdivision within country
     ["service", "<service-type>"],                  // e.g., "standard", "express", "overnight", "pickup"
     ["duration", "<min-hours>", "<max-hours>"],     // Estimated delivery window
@@ -118,12 +110,12 @@ This event type defines shipping methods, costs, and constraints. To ensure reli
     ["g", "<geohash>"],                            // Precise location
     
     // Weight constraints
-    ["weight-min", "<number>", "<unit>"],          // unit: g, kg, oz, lb
+    ["weight-min", "<number>", "<unit>"],          // unit: g, kg, oz, lb. Following ISO 80000-1
     ["weight-max", "<number>", "<unit>"],
     
     // Dimensional constraints
-    ["dim-max", "<length>", "<width>", "<height>", "<unit>"],  // unit: cm, in
-    ["dim-min", "<length>", "<width>", "<height>", "<unit>"],
+    ["dim-max", "<dim-value>", "<unit>"],  // unit: cm, in. Following ISO 80000-1. Dimension value should be expressed as "length x width x height"
+    ["dim-min", "<dim-value>", "<unit>"],
     
     // Price calculations
     ["price-weight", "<price-per-unit>", "<currency>", "<weight-unit>"],
@@ -215,19 +207,20 @@ Standard shipping option:
 
 - Order processing and communication uses [NIP-17](17.md) encrypted direct messages.
   - Kind `14` is used for regular communication, enabling users to maintain a conversation. The subject can be an order ID or left blank, depending on the context.
-  - Kind `15` is used for order processing and business logic.
+  - Kind `16` is used for order processing and business logic.
+  - Kind `17` is used for order receipts
 - Message direction is determined by the `p` tag - when sent from buyer to merchant, `p` contains the merchant's pubkey, and when sent from merchant to buyer, `p` contains the buyer's pubkey. 
 - The payment request message can be initiated in two ways, depending on whether the merchant has a server handling payments
 
 ### Message Types
-
 1. Order Creation (buyer → merchant) (subject "order-info")
 ```jsonc
 {
-  "kind": 15,
+  "kind": 16,
   "tags": [
     ["p", "<merchant-pubkey>"],
     ["subject", "order-info"],
+    ["type", 1],
     ["order", "<order-id>"],
     ["item", "30402:<pubkey>:<d-tag>", "<quantity>"],
     ["item", "30402:<pubkey>:<d-tag>", "<quantity>"], // Multiple items possible
@@ -245,10 +238,11 @@ Standard shipping option:
 2. Payment Request (merchant doesnt have a payment server) (merchant → buyer ) (subject "order-payment")
 ```jsonc
 {
-  "kind": 15,
+  "kind": 16,
   "tags": [
     ["p", "<buyer-pubkey>"],
     ["subject", "order-payment"],
+    ["type", 2],
     ["order", "<order-id>"],
     ["amount", "<total-amount>", "<currency>"],
     ["payment", "lightning", "<bolt11-invoice | ln-address(LUD16)>"],
@@ -259,13 +253,14 @@ Standard shipping option:
 }
 ```
 
-3. Payment Request (merchant have a payment server) ( buyer → merchant ) (subject "order-payment")
+Payment Request (merchant have a payment server) ( buyer → merchant ) (subject "order-payment")
 ```jsonc
 {
-  "kind": 15,
+  "kind": 16,
   "tags": [
     ["p", "<merchant-pubkey>"],
     ["subject", "order-payment"],
+    ["type", 2],
     ["order", "<order-id>"],
     ["amount", "<total-amount>"],
     ["payment", "lightning", "<bolt11-invoice | bolt12-offer>"],
@@ -275,10 +270,57 @@ Standard shipping option:
   "content": "Payment details provided by merchant's payment server."
 }
 ```
-4. Payment Receipt (buyer → merchant) (subject "order-receipt")
+
+3. Order Status Updates (merchant → buyer) (subject "order-info")
 ```jsonc
 {
-  "kind": 15,
+  "kind": 16,
+  "tags": [
+    ["p", "<buyer-pubkey>"],
+    ["subject", "order-info"],
+    ["type", 3],
+    ["order", "<order-id>"],
+    ["status", "<order-status>"], // e.g., "confirmed", "processing", "completed"
+    ["date", "<unix-timestamp>"]
+  ],
+  "content": "Your order is being prepared for shipping."
+}
+```
+
+4. Shipping Updates (merchant → buyer) (subject "shipping-info")
+```jsonc
+{
+  "kind": 16,
+  "tags": [
+    ["p", "<buyer-pubkey>"],
+    ["subject", "shipping-info"],
+    ["type", 4],
+    ["order", "<order-id>"],
+    ["status", "<shipping-status>"], // e.g., "processing", "shipped", "delivered"
+    ["tracking", "<tracking-number>"],
+    ["carrier", "<carrier-name>"],
+    ["eta", "<unix-timestamp>"]
+  ],
+  "content": "Your order has been picked up by UPS and is on its way!"
+}
+```
+
+Regular communication between users (subject "<order-id>")
+```jsonc
+{
+  "kind": 14,
+  "tags": [
+    ["p", "<buyer-pubkey | buyer-pubkey>"],
+    ["subject", "<order-id | empty-string>"],
+  ],
+  "content": "Some extra communication"
+}
+```
+
+Payment Receipt (buyer → merchant) (subject "order-receipt")
+```jsonc
+{
+  "kind": 17,
   "tags": [
     ["p", "<merchant-pubkey>"],
     ["subject", "order-receipt"],
@@ -292,118 +334,21 @@ Standard shipping option:
 }
 ```
 
-5. Shipping Updates (merchant → buyer) (subject "shipping-info")
-```jsonc
-{
-  "kind": 15,
-  "tags": [
-    ["p", "<buyer-pubkey>"],
-    ["subject", "shipping-info"],
-    ["order", "<order-id>"],
-    ["status", "<shipping-status>"], // e.g., "processing", "shipped", "delivered"
-    ["tracking", "<tracking-number>"],
-    ["carrier", "<carrier-name>"],
-    ["eta", "<unix-timestamp>"]
-  ],
-  "content": "Your order has been picked up by UPS and is on its way!"
-}
-```
-
-6. Order Status Updates (merchant → buyer) (subject "order-info")
-```jsonc
-{
-  "kind": 15,
-  "tags": [
-    ["p", "<buyer-pubkey>"],
-    ["subject", "order-info"],
-    ["order", "<order-id>"],
-    ["status", "<order-status>"], // e.g., "confirmed", "processing", "completed"
-    ["date", "<unix-timestamp>"]
-  ],
-  "content": "Your order is being prepared for shipping."
-}
-```
-
-7. Regular communication between users (subject "<order-id>")
-```jsonc
-{
-  "kind": 14,
-  "tags": [
-    ["p", "<buyer-pubkey | buyer-pubkey>"],
-    ["subject", "<order-id | empty-string>"],
-  ],
-  "content": "Some extra communication"
-}
-```
-
 ### Product Reviews (Kind: 31555)
 
 Following [NIP-85](https://github.com/nostr-protocol/nips/blob/b1432b705f553bde6c4eb5fcfde8525d2913b477/85.md) and [QTS](https://habla.news/u/arkinox@arkinox.tech/DLAfzJJpQDS4vj3wSleum) for the review schema:
 
-```
-{
-  "kind": 31555,
-  "tags": [
-    ["d", "a:<product-listing-kind>:<merchant-pubkey>:<product-listing-d-tag>"],
-    ["rating", “<0-or-1>”, "thumb"],
-    ["rating", "<0-or-1>", "<rating-label-1>"],
-    ["rating", "<0-or-1>", "<rating-label-2>"],
-    ...
-  ],
-  “content”: “<comment-on-product>”
-}
-```
-
-The `thumb` rating label MUST represent 50% of the score weight and be set as "good" (1) or "bad" (0), indicating the overall sentiment. Additional arbitrary rating labels can be added and would also be scored as "good" (1) or "bad" (0), but with equal weight across the remaining 50% of the rating. More granular scores between 0-1 can also be used without breaking compatibility.
-
-Rating calculation:
-
-Total Score = (Thumb × 0.5) + (0.5 × (∑(Additional Ratings) ÷ Number of Additional Ratings))
-
-Review Example:
-
 ```jsonc
 {
   "kind": 31555,
   "tags": [
-    ["d", "a:<listing kind>:<merchant pubkey>:<listing d-tag>"],
-    ["rating", “1”, "thumb"],
-    ["rating", “1”, "value”], 
-    ["rating", "1", "quality”], 
-    ["rating", “0”, "delivery”], 
-    ["rating", “1”, "communication”],
-  ]
-  “content”: “Great product!”
-}
-```
-
-7. Regular communication between users (subject "<order-id>")
-```jsonc
-{
-  "kind": 14,
-  "tags": [
-    ["p", "<buyer-pubkey | buyer-pubkey>"],
-    ["subject", "<order-id | empty-string>"],
-  ],
-  "content": "Some extra communication"
-}
-```
-
-### Product Reviews (Kind: 31555)
-
-Following [NIP-85](https://github.com/nostr-protocol/nips/blob/b1432b705f553bde6c4eb5fcfde8525d2913b477/85.md) and [QTS](https://habla.news/u/arkinox@arkinox.tech/DLAfzJJpQDS4vj3wSleum) for the review schema:
-
-```
-{
-  "kind": 31555,
-  "tags": [
     ["d", "a:<product-listing-kind>:<merchant-pubkey>:<product-listing-d-tag>"],
-    ["rating", “<0-or-1>”, "thumb"],
+    ["rating", "<0-or-1>", "thumb"],
     ["rating", "<0-or-1>", "<rating-label-1>"],
     ["rating", "<0-or-1>", "<rating-label-2>"],
     ...
   ],
-  “content”: “<comment-on-product>”
+  "content": "<comment-on-product>"
 }
 ```
 
@@ -430,17 +375,15 @@ Review Example:
 }
 ```
 
-
-
 ### Payment Flow Notes
 
 A payment preference can be added to the Kind0 event in the following structure payment-preference = ecash | lud16 | bolt12 | manual
 
 ORDER OF SUGGESTED PAYMENT ACCEPTANCE:
 
-1) eCach
+1) eCash
 
-2)  Lightning (bolt11 / bolt12)
+2) Lightning (bolt11 / bolt12)
    
 3) On-chain
 
@@ -471,8 +414,6 @@ Marketplace servers can optionally facilitate the payment process by:
 5. Price calculations
 
 This provides a smoother user experience while maintaining the ability for direct merchant-buyer communication as a fallback mechanism.
-
-
 
 ## Notes and Considerations
 
