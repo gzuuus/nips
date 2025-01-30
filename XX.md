@@ -6,28 +6,96 @@ Marketplace Protocol
 
 `draft` `optional`
 
-// TODO: Mention the optionality of the different components used in this nip.
+This NIP defines a comprehensive protocol for implementing decentralized marketplaces on Nostr. It provides a complete e-commerce framework while maintaining protocol simplicity and interoperability.
 
-This NIP defines a comprehensive protocol for implementing decentralized marketplaces on Nostr, combining and enhancing the approaches from [NIP-15](15.md) and [NIP-99](99.md). It provides a complete e-commerce framework while maintaining the protocol's simplicity and interoperability.
+## Protocol Requirements
 
-The focus for NIP-99 is on the product listing but this NIP also provides a structure for other necessary flows for a complete checkout procedure:
+The protocol is structured into required core components and optional extensions:
 
-1) Order Communication Flow 
-2) Shipping Calculation Flow
-   This will be it's own kind ( replaceable event ) for updates during the shipping process, pricing schema for shipping costs and general shipping settings: Examples are zoning restrictions: USA, EU, NA, and free shipping: 50 USD
-3) Payment Flows
+### Required Components
+Implementations MUST support these core features to be considered compatible:
 
-A general checkout implementation can be structured as followed:
-1) Items are gathered in a Local Basket 
-2) Shipping details are required to calculate a full payment amount
-3) Order gets send once Payment is received ( Zap Receipt , Nut Receipt, Marketplace server )
+- Product listing events (Kind: 30402)
+- Basic product metadata (title, price, currency)
+- Order communication via [NIP-17](17.md) encrypted messages
+- Native Nostr payment processing
 
-In practice a shop can have a preferred checkout and shipping option defined at the store level and product level. A option at the store level will be used if nothing is defined at the product level, essentially making it that product level shipping and payment options always overrule store level settings.
+### Optional Components
+These features MAY be implemented based on specific marketplace needs:
+
+- Drafts following [NIP-37](37.md)
+- Product collections (Kind: 30405) 
+- Shipping options (Kind: 30406)
+- Product reviews (Kind: 31555)
+- Extended product metadata
+- Server-assisted payment processing
+
+### Core Flows
+1. Order Communication Flow
+   - Encrypted messaging between buyer and seller
+   - Order status updates and confirmations
+   
+2. Shipping Flow
+   - Shipping options and pricing (Kind: 30406)
+   - Geographic restrictions and zones
+   - Delivery status tracking
+   
+3. Payment Flow
+   - Multiple payment method support
+   - Payment verification
+   - Receipt generation
+
+A standard checkout process proceeds as:
+1. Products added to cart
+2. Shipping details collected and costs calculated
+3. Payment request
+4. Payment processed and verified
+5. Order and shipping follow up using encrypted messages
 
 ## Events and Kinds
 
 ### Product Listing (Kind: 30402)
-Following [NIP-99](99.md)'s schema for product representation:
+The core event type for representing products in the marketplace. Each product listing MUST include basic metadata and MAY include additional details. Products are the core element in a marketplace, their configuration is the source of truth, overriding other possible configurations of other market elements such as collections.
+
+Content: Product description, markdown is allowed
+Required tags:
+- `d`: Unique product identifier for referencing the listing
+- `title`: Product name/title for display
+- `price`: Price information array `[<amount>, <currency>, <optional frequency>]`
+  - amount: Decimal number (e.g., "10.99")
+  - currency: ISO 4217 code (e.g., "USD", "EUR")
+  - frequency: Optional subscription interval using ISO 8601 duration units (e.g. 'D' for daily, 'W' for weekly, 'Y' for yearly).
+
+Optional tags:
+- Product Details:
+  - `type`: Product classification `[<type>, <format>]`
+    - type: "simple", "variable", or "variation"
+    - format: "digital" or "physical"
+    - Default: type: "simple", format: "digital"
+  - `visibility`: Display status ("hidden", "on-sale", "pre-order"). Default: "on-sale"
+  - `stock`: Available quantity as integer
+  - `summary`: Short product description
+  - `spec`: Product specifications `[<key>, <value>]`
+
+- Media:
+  - `image`: Product images `[<url>, <dimensions>]`
+    - url: Direct image URL
+    - dimensions: Optional "<width>x<height>" format
+
+- Physical Properties:
+  - `weight`: Product weight `[<value>, <unit>]` using ISO 80000-1
+  - `dim`: Dimensions `[<l>x<w>x<h>, <unit>]` using ISO 80000-1
+
+- Location:
+  - `location`: Human-readable location string
+  - `g`: Geohash for precise location lookup
+
+- Organization:
+  - `t`: Product categories/tags
+  - `a`: Collection reference "30405:<pubkey>:<d-tag>"
+  - `shipping`: Shipping options
+    - Format: "30406:<pubkey>:<d-tag>" for direct options
+    - Format: "30405:<pubkey>:<d-tag>" for collection shipping
 
 ```jsonc
 {
@@ -35,34 +103,80 @@ Following [NIP-99](99.md)'s schema for product representation:
   "created_at": <unix timestamp>,
   "content": "<product description in markdown>",
   "tags": [
+    // Required tags
     ["d", "<product identifier>"],
     ["title", "<product title>"],
+    // TODO: How to inherit currency from a collection?
     ["price", "<amount>", "<currency>", "<optional frequency>"],
-    // Optional tags
-    ["image", "<url>", "<dimensions>"],
+
+    // Product details
+    ["type", "<simple|variable|variation>", "<digital|physical>"],  // Defaults: simple, digital
+    ["visibility", "<hidden|on-sale|pre-order>"],  // Default: on-sale
+    ["stock", "<integer>"],  // Available quantity
     ["summary", "<short description>"],
-    ["stock", "<integer>"], // Determines the amount of available stock
-    ["shipping", "30406:<pubkey>:<d-tag>"], // References to shipping options
-    ["shipping", "30405:<pubkey>:<d-tag>"], // References to a product collection, in this case, shipping is inherited from the collection
-    ["type","<simple | variable | variation>", "<digital | physical>"], // Determines whether a product is a simple product, a variable product, or a variation of a variable product. The third element of the array determines whether the product is digital or physical. Default value (or if omitted): "simple and digital".
-    ["visivilty","<hidden | on-sale | pre-order>"], // Determines how the product should be displayed, default value (or if omitted): "on-sale
-    ["spec", "<spec-key>", "<spec-value>"], // E.g. spec-key: screen-size, spec-value: 21"
-    ["weight","<weight-value>", "<weight-measure-unit>"], // Weight units should follow ISO 80000-1 standard
-    ["dim","<dim-value>","<dim-measure-unit>"] // Dimension value should be expressed as "length x width x height", e.g. "3x3x3", using the "x" character as a delimiter. Units should be "mm", "cm", "m", following the ISO 80000-1 standard.
-    ["location", "<location string>"],
-    ["g", "<geo hash>"],
+    
+    // Media and specs
+    ["image", "<url>", "<dimensions>"],
+    ["spec", "<key>", "<value>"],  // Product specifications (e.g., "screen-size", "21 inch"). Cam be present multiple times
+    
+    // Physical properties (for shipping)
+    ["weight", "<value>", "<unit>"],  // ISO 80000-1 units (g, kg, etc)
+    ["dim", "<l>x<w>x<h>", "<unit>"], // ISO 80000-1 units (mm, cm, m)
+    
+    // Location
+    ["location", "<address string>"],
+    ["g", "<geohash>"],
+    
+    // Classifications
     ["t", "<category>"],
-    ["a", "<30405>:<pubkey>:<d-tag>"] // Reference to product collection if applicable
+    
+    // References
+    ["shipping", "<30406|30405>:<pubkey>:<d-tag>"],  // Shipping options or collection
+    ["a", "30405:<pubkey>:<d-tag>"]  // Product collection
   ]
 }
 ```
 
 #### Notes
-- Products are the highest level item in a market place
-- You can define the shipping option by referencing a shipping event, or a product collection, in this last ase the shipping options should be inherited from the collection and merge with the other shippings defined in the product if they exist
+1. Product Configuration:
+   - Products can be simple, variable (with options), or variations of variable products
+   - Digital products skip shipping requirements
+   - Visibility controls product display status
+
+2. Shipping Rules:
+   - Shipping options can be defined directly or inherited from collections
+   - If the product specifies product-specific shipping, and also from a collation, shipping options MUST be merged.
+
+3. Collections and Categories:
+   - Products can refer to one o multiple collections using `a` tags, whether or not they are part of it, for discoverability purposes.
+   - Categories ("t" tags) aid in discovery and organization
+
+4. Location Support:
+   - Optional location data aids in local marketplace features
+   - Geohash enables precise location-based searches
 
 ### Product Collection (Kind: 30405)
-Using NIP-51 list format for grouping products:
+A specialized event type using [NIP-51](51.md) list format to organize related products into groups. Collections enable merchants to create meaningful product groupings and share common attributes that products can reference.
+
+Required tags:
+- `d`: Unique collection identifier
+- `name`: Collection display name
+- `a`: Product references `["a", "30402:<pubkey>:<d-tag>"]`
+  - Multiple product references allowed
+  - References must point to valid product listings
+
+Optional tags:
+- Display:
+  - `image`: Collection banner/thumbnail URL
+  - `summary`: Brief collection description
+
+- Location:
+  - `location`: Human-readable location string
+  - `g`: Geohash for precise location lookup
+
+- Reference Options:
+  - `shipping`: Available shipping options `["shipping", "30406:<pubkey>:<d-tag>"]`
+  - `currency`: ISO 4217 currency code for collection
 
 ```jsonc
 {
@@ -70,26 +184,76 @@ Using NIP-51 list format for grouping products:
   "created_at": <unix timestamp>,
   "content": "<optional collection description>",
   "tags": [
+    // Required tags
     ["d", "<collection identifier>"],
     ["name", "<collection name>"],
-    ["a", "30402:<pubkey>:<d-tag>"], // Product references
+    ["a", "30402:<pubkey>:<d-tag>"],  // Product reference
+    
     // Optional tags
-    ["image", "<collection image>"],
+    ["image", "<collection image URL>"],
     ["summary", "<collection description>"],
+    
+    // Location
     ["location", "<location string>"],
-    ["g", "<geo hash>"],
-    ["shipping", "30406:<pubkey>:<d-tag>"], // References to shipping options
-    ["currency", "<collection-currency>"] // Currency codes MUST follow the ISO 4217
+    ["g", "<geohash>"],
+    
+    // Reference Options
+    ["shipping", "30406:<pubkey>:<d-tag>"],  // Available shipping options
+    ["currency", "<ISO 4217 currency code>"]  // Collection currency
   ]
 }
 ```
 
+#### Notes
+1. Collection Management:
+   - Collections can contain any number of products
+   - Products can belong to multiple collections
+   - Products must explicitly reference collection resources to inherit collection attributes (e.g. shipping, currency).
+
+2. Reference Model:
+   - Collection settings (shipping, currency) serve as references only
+   - Products must explicitly reference collection shipping options
+   - No automatic cascading of settings to products
+
+3. Location Support:
+   - Optional location data helps with marketplace organization
+   - Enables geographic grouping of related products
+
 ### Drafts
-Users may want to save products or collections as private drafts before they are publicly visible, or while they are working on the details. To achieve this, clients MUST follow the [nip-37](https://github.com/nostr-protocol/nips/blob/master/37.md)
+Products and collections can be saved as private drafts while being prepared for publication. This allows merchants to work on listings before making them publicly visible. Implementation MUST follow [NIP-37](https://github.com/nostr-protocol/nips/blob/master/37.md) for draft management.
 
 ### Shipping Option (Kind: 30406)
+A specialized event type for defining shipping methods, costs, and constraints. Shipping options can be published by merchants or third-party providers (delivery companies, DVMs, etc.) and referenced by product listings or collections.
 
-This event type defines shipping methods, costs, and constraints. To ensure reliable tag association, each physical pickup location should be defined in a separate event. These events can be published by the merchant or a third-party provider, and can be subscribed to by the merchant. This approach allows merchants to easily define their shipping options manually, or reference shipping options published by a third-party provider, such as a delivery company, a DVM, etc.
+Required tags:
+- `d`: Unique shipping option identifier
+- `name`: Display name for the shipping method
+- `price`: Base cost array `[<base_cost>, <currency>]`
+- `country`: Array of ISO 3166-1 alpha-2 country codes `[<code1>, <code2>, ...]`
+- `service`: Service type ("standard", "express", "overnight", "pickup")
+
+Optional tags:
+- Extra details:
+  - `carrier`: The name of the carrier that will be used for the delivery
+- Time and Location:
+  - `region`: Array of ISO 3166-2 region codes `[<code1>, <code2>, ...]`
+  - `duration`: Delivery window `[<min>, <max>, <unit>]` using ISO 8601 duration units
+    - min: Minimum delivery time
+    - max: Maximum delivery time
+    - unit: "H" (hours), "D" (days), "W" (weeks)
+  - `location`: Physical address for pickup
+  - `g`: Geohash for precise location
+
+- Constraints:
+  - `weight-min`: Minimum weight `[<value>, <unit>]` (ISO 80000-1)
+  - `weight-max`: Maximum weight `[<value>, <unit>]`
+  - `dim-min`: Minimum dimensions `[<l>x<w>x<h>, <unit>]`
+  - `dim-max`: Maximum dimensions `[<l>x<w>x<h>, <unit>]`
+
+- Price Calculations:
+  - `price-weight`: Per weight pricing `[<price>, <currency>, <unit>]`
+  - `price-volume`: Per volume pricing `[<price>, <currency>, <unit>]`
+  - `price-distance`: Per distance pricing `[<price>, <currency>, <unit>]`
 
 ```jsonc
 {
@@ -97,284 +261,351 @@ This event type defines shipping methods, costs, and constraints. To ensure reli
   "created_at": <unix timestamp>,
   "content": "<optional shipping description>",
   "tags": [
+    // Required tags
     ["d", "<shipping identifier>"],
     ["name", "<shipping method name>"],
     ["price", "<base_cost>", "<currency>"],
-    ["country", "<ISO 3166-1 alpha-2 country code>"],  // Can be repeated for multiple countries
-    ["region", "<ISO 3166-2 region code>"],         // Optional subdivision within country
-    ["service", "<service-type>"],                  // e.g., "standard", "express", "overnight", "pickup"
-    ["duration", "<min-hours>", "<max-hours>"],     // Estimated delivery window
+    ["country", "<ISO 3166-1 alpha-2>", "...", "..."],  // Array of country codes
+    ["service", "<service-type>"],
+
+    // Extra details
+    ["carrier","<name of the carrier>"]
     
-    // Optional tags    
-    ["location", "<pickup location description>"],   // Physical address
-    ["g", "<geohash>"],                            // Precise location
+    // Time and Location
+    ["region", "<ISO 3166-2 code>", "...", "..."],  // Array of region codes
+    ["duration", "<min>", "<max>", "<unit>"],  // ISO 8601 duration units (H/D/W)
+    ["location", "<address string>"],
+    ["g", "<geohash>"],
     
-    // Weight constraints
-    ["weight-min", "<number>", "<unit>"],          // unit: g, kg, oz, lb. Following ISO 80000-1
-    ["weight-max", "<number>", "<unit>"],
+    // Constraints
+    ["weight-min", "<value>", "<unit>"],
+    ["weight-max", "<value>", "<unit>"],
+    ["dim-min", "<l>x<w>x<h>", "<unit>"],
+    ["dim-max", "<l>x<w>x<h>", "<unit>"],
     
-    // Dimensional constraints
-    ["dim-max", "<dim-value>", "<unit>"],  // unit: cm, in. Following ISO 80000-1. Dimension value should be expressed as "length x width x height"
-    ["dim-min", "<dim-value>", "<unit>"],
-    
-    // Price calculations
-    ["price-weight", "<price-per-unit>", "<currency>", "<weight-unit>"],
-    ["price-volume", "<price-per-unit>", "<currency>", "<volume-unit>"],
-    ["price-distance", "<price-per-unit>", "<currency>", "<distance-unit>"]
+    // Price Calculations
+    ["price-weight", "<price>", "<currency>", "<unit>"],
+    ["price-volume", "<price>", "<currency>", "<unit>"],
+    ["price-distance", "<price>", "<currency>", "<unit>"]
   ]
 }
 ```
 
-#### Example Events
+#### Implementation Examples
 
-Single pickup location:
+Local Pickup:
 ```jsonc
 {
   "kind": 30406,
   "created_at": 1703187600,
-  "content": "Downtown Miami Store Pickup",
+  "content": "Downtown Store Pickup",
   "tags": [
-    ["d", "miami-downtown-pickup"],
-    ["name", "Downtown Miami Pickup"],
+    ["d", "downtown-pickup"],
+    ["name", "Downtown Store Pickup"],
     ["price", "0", "USD"],
-    ["zone", "US"],
+    ["country", "US"],
     ["region", "US-FL"],
     ["service", "pickup"],
-    ["location", "789 Brickell Ave, Miami, FL 33131"],
-    ["g", "dhwm9c4ws"],
+    ["location", "123 Main St, Downtown, FL"],
+    ["g", "dhwm9c4ws"]
   ]
 }
 ```
 
-Separate pickup location (same merchant):
+Standard Shipping:
 ```jsonc
 {
   "kind": 30406,
   "created_at": 1703187600,
-  "content": "Miami Beach Store Pickup",
+  "content": "Standard Regional Shipping",
   "tags": [
-    ["d", "miami-beach-pickup"],
-    ["name", "Miami Beach Pickup"],
-    ["price", "0", "USD"],
-    ["zone", "US"],
-    ["region", "US-FL"],
-    ["service", "pickup"],
-    ["location", "456 Ocean Drive, Miami Beach, FL 33139"],
-    ["g", "dhwv1zp8k"],
-  ]
-}
-```
-
-Standard shipping option:
-```jsonc
-{
-  "kind": 30406,
-  "created_at": 1703187600,
-  "content": "Standard domestic shipping within Florida",
-  "tags": [
-    ["d", "fl-standard"],
-    ["name", "Florida Standard Shipping"],
+    ["d", "standard-regional"],
+    ["name", "Standard Shipping"],
     ["price", "5.99", "USD"],
-    ["zone", "US"],
+    ["country", "US"],
     ["region", "US-FL"],
     ["service", "standard"],
-    ["duration", "24", "72"],
+    ["duration", "24", "72", "H"],  // 24-72 hours delivery window
     ["weight-max", "30", "kg"],
-    ["dim-max", "120", "60", "60", "cm"],
+    ["dim-max", "120x60x60", "cm"],
     ["price-weight", "0.75", "USD", "kg"]
   ]
 }
 ```
 
-#### Shipping Notes
+#### Notes
+1. Event Management:
+   - Create separate events for each distinct shipping option
+   - Each option needs a unique `d` tag identifier
+   - Merchants can reference third-party shipping options
 
-1. For merchants with multiple pickup locations:
-   - Create separate shipping option events for each physical location
-   - Each location should have its own unique `d` tag identifier
-   - Product listings can reference multiple pickup options
+2. Shipping Rules:
+   - Physical pickup requires location and/or geohash
+   - Weight/dimension constraints use ISO 80000-1 units
+   - Price calculations can combine multiple factors
 
-2. Clients should:
-   - Group pickup locations by merchant when displaying options
-   - Use geohash data to show pickup locations on a map
-   - Sort pickup locations by distance from user when possible
-
-3. Location identification:
-   - Each pickup location must have both `location` and `g` tags
-   - The `location` tag contains human-readable address
-   - The `g` tag contains geohash for precise positioning
+3. Client Behavior:
+   - Group options by service type and location
+   - Use geohash for distance-based sorting
+   - Validate package constraints before offering options
 
 ## Order Communication Flow
+Order processing and status updates use [NIP-17](17.md) encrypted direct messages, with three event kinds serving different purposes:
 
-- Order processing and communication uses [NIP-17](17.md) encrypted direct messages.
-  - Kind `14` is used for regular communication, enabling users to maintain a conversation. The subject can be an order ID or left blank, depending on the context.
-  - Kind `16` is used for order processing and business logic.
-  - Kind `17` is used for order receipts
-- Message direction is determined by the `p` tag - when sent from buyer to merchant, `p` contains the merchant's pubkey, and when sent from merchant to buyer, `p` contains the buyer's pubkey. 
-- The payment request message can be initiated in two ways, depending on whether the merchant has a server handling payments
+- Kind `14`: Regular communication between parties
+  - General inquiries and responses
+  - Order clarifications
+  - Subject can be order ID or empty
+  
+- Kind `16`: Order processing and status. These messages include a `type` field that indicates the specific kind of message
+  - Order creation and details. `type`: 1
+  - Payment requests. `type`: 2
+  - Status updates. `type`: 3
+  - Shipping information. `type`: 4
+  
+- Kind `17`: Payment receipts and verification
+
+Message direction is determined by the `p` tag:
+- Buyer → Merchant: event author is the buyer, `p` tag contains merchant's pubkey
+- Merchant → Buyer: event author is the merchant, `p` tag contains buyer's pubkey
+
+The payment request flow can operate in two modes:
+1. Direct: Merchant processes requests manually
+2. Service-assisted: Merchant's payment service handles requests
 
 ### Message Types
-1. Order Creation (buyer → merchant) (subject "order-info")
+
+#### 1. Order Creation
+Sent by buyer to initiate order
+
 ```jsonc
 {
   "kind": 16,
   "tags": [
+    // Required tags
     ["p", "<merchant-pubkey>"],
-    ["subject", "order-info"],
-    ["type", 1],
-    ["order", "<order-id>"],
+    ["subject", "<order-info subject>"],
+    ["type", "1"],  // Order creation
+    ["order", "<order-id>"],  // Unique order identifier
+    ["amount", "<total-amount>", "<currency>"],
+    
+    // Order items (can repeat)
     ["item", "30402:<pubkey>:<d-tag>", "<quantity>"],
-    ["item", "30402:<pubkey>:<d-tag>", "<quantity>"], // Multiple items possible
+    
+    // Shipping details
     ["shipping", "30406:<pubkey>:<d-tag>"],
-    ["amount", "<total-amount>"],
     ["address", "<shipping-address>"],
-    ["email", "<customer-email>"],
-    ["phone", "<customer-phone>"],
-    // Other order related fields
+    
+    // Customer contact
+    ["email", "<customer-email>"],  // Optional
+    ["phone", "<customer-phone>"],  // Optional
   ],
-  "content": "Additional notes: Please gift wrap the items."
+  "content": "Order notes or special requests"
 }
 ```
 
-2. Payment Request (merchant doesnt have a payment server) (merchant → buyer ) (subject "order-payment")
+#### 2. Payment Request
+Two variants depending on payment processing mode:
+
+##### Direct Processing (merchant → buyer)
+In this mode the merchant have to manually send the payment request to the buyer.
+
 ```jsonc
 {
   "kind": 16,
   "tags": [
+    // Required tags
     ["p", "<buyer-pubkey>"],
     ["subject", "order-payment"],
-    ["type", 2],
+    ["type", "2"],  // Payment request
     ["order", "<order-id>"],
     ["amount", "<total-amount>", "<currency>"],
-    ["payment", "lightning", "<bolt11-invoice | ln-address(LUD16)>"],
-    ["payment", "bitcoin", "<btc-address>"] // Multiple payment options possible,
-    ["expiry", "<unix-timestamp>"]
+    
+    // Payment options (can include multiple)
+    ["payment", "lightning", "<bolt11-invoice|lud16>"],
+    ["payment", "bitcoin", "<btc-address>"],
+    ["payment", "ecash", "<mint-url>"],
   ],
-  "content": "Payment is due within 24 hours."
+  "content": "Payment instructions and notes"
 }
 ```
 
-Payment Request (merchant have a payment server) ( buyer → merchant ) (subject "order-payment")
+##### Service Processing (buyer → merchant)
+In this mode, the merchant uses a service to process payments automatically without manual interaction. The key difference is that the buyer initiates the transaction using information provided by the merchant's chosen service. To enhance security and verifiability, the merchant SHOULD use [NIP-89](89.md) application handlers to define their preferred payment processing service and prevent fake services from issuing fraudulent payment requests.
+
 ```jsonc
 {
   "kind": 16,
   "tags": [
+    // Required tags
     ["p", "<merchant-pubkey>"],
     ["subject", "order-payment"],
-    ["type", 2],
+    ["type", "2"],  // Payment request
     ["order", "<order-id>"],
-    ["amount", "<total-amount>"],
-    ["payment", "lightning", "<bolt11-invoice | bolt12-offer>"],
+    ["amount", "<total-amount>", "<currency>"],
+    
+    // Payment details from service
+    ["payment", "lightning", "<bolt11-invoice|bolt12-offer>"],
     ["payment", "bitcoin", "<btc-address>"],
-    ["expiry", "<unix-timestamp>"]
+    ["payment", "ecash", "<mint-url>"],
   ],
-  "content": "Payment details provided by merchant's payment server."
+  "content": "Service-generated payment details"
 }
 ```
 
-3. Order Status Updates (merchant → buyer) (subject "order-info")
+#### 3. Order Status Updates
+Sent by merchant to update order status (Kind 16)
+
 ```jsonc
 {
   "kind": 16,
   "tags": [
+    // Required tags
     ["p", "<buyer-pubkey>"],
     ["subject", "order-info"],
-    ["type", 3],
+    ["type", "3"],  // Status update
     ["order", "<order-id>"],
-    ["status", "<order-status>"], // e.g., "confirmed", "processing", "completed"
-    ["date", "<unix-timestamp>"]
+    
+    // Status information
+    ["status", "<order-status>"],  // pending|confirmed|processing|completed|cancelled
+    ["date", "<unix-timestamp>"],
   ],
-  "content": "Your order is being prepared for shipping."
+  "content": "Human readable status update"
 }
 ```
 
-4. Shipping Updates (merchant → buyer) (subject "shipping-info")
+#### 4. Shipping Updates
+Sent by merchant with delivery information (Kind 16)
+
 ```jsonc
 {
   "kind": 16,
   "tags": [
+    // Required tags
     ["p", "<buyer-pubkey>"],
     ["subject", "shipping-info"],
-    ["type", 4],
+    ["type", "4"],  // Shipping update
     ["order", "<order-id>"],
-    ["status", "<shipping-status>"], // e.g., "processing", "shipped", "delivered"
+    
+    // Shipping details
+    ["status", "<shipping-status>"],  // processing|shipped|delivered|exception
     ["tracking", "<tracking-number>"],
     ["carrier", "<carrier-name>"],
-    ["eta", "<unix-timestamp>"]
+    ["eta", "<unix-timestamp>"],
   ],
-  "content": "Your order has been picked up by UPS and is on its way!"
+  "content": "Shipping status and tracking information"
 }
 ```
 
-Regular communication between users (subject "<order-id>")
+#### 5. General Communication
+Used for any order-related messages (Kind 14)
+
 ```jsonc
 {
   "kind": 14,
   "tags": [
-    ["p", "<buyer-pubkey | buyer-pubkey>"],
-    ["subject", "<order-id | empty-string>"],
+    // Required tags
+    ["p", "<recipient-pubkey>"],
+    ["subject", "<order-id>"],  // Optional, can be empty
   ],
-  "content": "Some extra communication"
+  "content": "General communication message"
 }
 ```
 
-Payment Receipt (buyer → merchant) (subject "order-receipt")
+#### 6. Payment Receipt
+Sent by buyer to confirm payment (Kind 17)
+
 ```jsonc
 {
   "kind": 17,
   "tags": [
+    // Required tags
     ["p", "<merchant-pubkey>"],
     ["subject", "order-receipt"],
     ["order", "<order-id>"],
-    ["payment", "lightning", "<bolt11-invoice | bolt12-offer>", "<preimage>"],
-    // or
-    ["payment", "bitcoin", "<btc-address>", "<txid>"],
-    ["date", "<unix-timestamp>"]
+    
+    // Payment proof (one required)
+    ["payment", "lightning", "<invoice>", "<preimage>"],
+    ["payment", "bitcoin", "<address>", "<txid>"],
+    ["payment", "ecash", "<mint-url>", "<proof>"],
+    
+    // Metadata
+    ["date", "<unix-timestamp>"],
+    ["amount", "<amount>", "<currency>"]
   ],
-  "content": "Payment completed via Lightning Network"
+  "content": "Payment confirmation details"
 }
 ```
+
+#### Notes
+1. Message Flow:
+   - All sensitive data must be encrypted
+   - Status updates should be prompt and clear
+   - Receipts should include verifiable proofs
+
+2. Payment Processing:
+   - Service mode enables faster processing
+   - Direct mode provides more flexibility
+   - Multiple payment options can be offered
+
+3. Status Tracking:
+   - Use consistent status codes
+   - Include timestamps for all updates
+   - Provide clear user messages
 
 ### Product Reviews (Kind: 31555)
+Product reviews follow [NIP-85](https://github.com/nostr-protocol/nips/blob/b1432b705f553bde6c4eb5fcfde8525d2913b477/85.md) and [QTS](https://habla.news/u/arkinox@arkinox.tech/DLAfzJJpQDS4vj3wSleum) guidelines with additional marketplace-specific rating criteria. Reviews provide structured feedback about products, merchants, and the overall purchase experience.
 
-Following [NIP-85](https://github.com/nostr-protocol/nips/blob/b1432b705f553bde6c4eb5fcfde8525d2913b477/85.md) and [QTS](https://habla.news/u/arkinox@arkinox.tech/DLAfzJJpQDS4vj3wSleum) for the review schema:
+Required tags:
+- `d`: Reference to product `["d", "a:30402:<merchant-pubkey>:<product-d-tag>"]`
+- `rating`: Primary rating `["rating", "<score>", "thumb"]`
+  - score: 0 (negative) to 1 (positive)
+  - "thumb" label MUST be present as primary rating
 
-```jsonc
-{
-  "kind": 31555,
-  "tags": [
-    ["d", "a:<product-listing-kind>:<merchant-pubkey>:<product-listing-d-tag>"],
-    ["rating", "<0-or-1>", "thumb"],
-    ["rating", "<0-or-1>", "<rating-label-1>"],
-    ["rating", "<0-or-1>", "<rating-label-2>"],
-    ...
-  ],
-  "content": "<comment-on-product>"
-}
-```
-
-The `thumb` rating label MUST represent 50% of the score weight and be set as "good" (1) or "bad" (0), indicating the overall sentiment. Additional arbitrary rating labels can be added and would also be scored as "good" (1) or "bad" (0), but with equal weight across the remaining 50% of the rating. More granular scores between 0-1 can also be used without breaking compatibility.
-
-Rating calculation:
-
-Total Score = (Thumb × 0.5) + (0.5 × (∑(Additional Ratings) ÷ Number of Additional Ratings))
-
-Review Example:
+Optional tags:
+- Additional Ratings:
+  - `rating`: Category scores `["rating", "<score>", "<category>"]`
+    - score: 0 to 1 (supports fractional values)
+    - category: These are optional, some standard categories may include:
+      - "value": Price vs quality
+      - "quality": Product quality
+      - "delivery": Shipping experience
+      - "communication": Merchant responsiveness
 
 ```jsonc
 {
   "kind": 31555,
+  "created_at": <unix timestamp>,
   "tags": [
-    ["d", "a:<listing kind>:<merchant pubkey>:<listing d-tag>"],
-    ["rating", "1", "thumb"],
-    ["rating", "1", "value"], 
-    ["rating", "1", "quality"], 
-    ["rating", "0", "delivery"], 
-    ["rating", "1", "communication"],
+    // Required tags
+    ["d", "a:30402:<merchant-pubkey>:<product-d-tag>"],
+    ["rating", "1", "thumb"],  // Primary rating
+    
+    // Optional rating categories
+    ["rating", "0.8", "value"],
+    ["rating", "1.0", "quality"],
+    ["rating", "0.6", "delivery"],
+    ["rating", "0.9", "communication"]
   ],
-  "content": "Great product!"
+  "content": "Detailed review text"
 }
 ```
 
+#### Rating Calculation
+The final score combines the primary "thumb" rating (50% weight) with additional category ratings (50% combined weight):
+
+```
+Total Score = (Thumb × 0.5) + (0.5 × (∑(Category Ratings) ÷ Number of Categories))
+```
+
+#### Notes
+1. Rating System:
+   - Primary thumb rating is required
+   - Additional categories are optional
+   - Scores support fractional values (0-1)
+   - Custom categories can be added
+
+// TODO: continue here
 ### Payment Flow Notes
 
 A payment preference can be added to the Kind0 event in the following structure payment-preference = ecash | lud16 | bolt12 | manual
