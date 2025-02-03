@@ -753,8 +753,8 @@ Merchants can specify their payment preferences in their kind:`0` event using th
 
 If not present, it defaults to `manual`. The preferences are processed in this order of complexity:
 1. Manual (default): Merchant provides payment requests directly
-2. eCash: Ideally the merchant have a kind `10019` event to know what mint they prefer.
-  - If event kind `10019` is not present, payment can be made by sending the token embedded directly in the order receipt message.
+2. eCash: Ideally the merchant has a kind `10019` event to know what mint they prefer.
+  - If the `10019` event is not present, payment can be made by sending the token embedded directly in the order receipt message from a previously set mint (whether default or user selected); otherwise, the merchant's preferred mint SHOULD be used.
 3. Lightning: Requires `lud16` or related lightning fields in kind `0`
 
 #### Payment Processing Scenarios
