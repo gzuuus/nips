@@ -1,72 +1,112 @@
-NIP-XX
+NIP-99
 ======
 
 Marketplace Protocol
 ---------------------------
 
 `draft` `optional`
-
 This NIP defines a comprehensive protocol for implementing decentralized marketplaces on Nostr. It provides a complete e-commerce framework while maintaining protocol simplicity and interoperability.
 
 ## Protocol Requirements
 
-The protocol is structured into required core components and optional extensions:
+The protocol is structured into required core components and optional components:
 
 ### Required Components
 Implementations MUST support these core features to be considered compatible:
 
 - Product listing events (Kind: 30402)
-- Product collection events (Kind: 30405) specifically for product to collection references
+- Product collection events (Kind: 30405) specifically for product to collection lookup references
+- Merchant's preferences
 - Order communication and processing via [NIP-17](17.md) encrypted messages
+
+#### Watch-only clients
+Watch-only clients are applications that allow users to display products without implementing full e-commerce capabilities. These clients don't need to support all required components - product rendering alone can be sufficient. However, ideally, they should also handle logic for looking up collections, reviews, and shipping options. Support for order communication using [NIP-17](17.md) is optional.
 
 ### Optional Components
 These features MAY be implemented based on specific marketplace needs:
 
 - Extended product metadata
+- Shipping options (Kind: 30406)
 - Product collections (Kind: 30405) 
 - Drafts following [NIP-37](37.md)
-- Shipping options (Kind: 30406)
 - Product reviews (Kind: 31555)
-- Server-assisted order and payment processing
+- Service assisted order and payment processing
 
 ### Core Flows
-1. Order Communication Flow
-   - Encrypted messaging between buyer and seller
-   - Order status updates and confirmations
-   
-2. Shipping Flow
-   - Shipping options and pricing (Kind: 30406)
-   - Geographic restrictions and zones
-   - Delivery status tracking
-   
-3. Payment Flow
-   - Multiple payment method support
-   - Payment verification
-   - Receipt generation
+1. Merchant Preferences
+  - Usage of [NIP-89](89.md) for merchant's application preferences
+  - Usage of `payment-preference` tag in merchant's kind `0` to determine payment method preferences
 
-A standard checkout process proceeds as:
-1. Products added to cart
-2. Shipping details collected and costs calculated
-3. Payment request
-4. Payment processed and verified
-5. Order and shipping follow up using encrypted messages
+2. Order Communication Flow
+  - Encrypted messaging between buyer and seller
+  - Order status updates and confirmations
+   
+3. Shipping Flow
+  - Shipping options and pricing (Kind: 30406)
+  - Geographic restrictions and zones
+   
+4. Payment Flow
+  - Multiple payment method support
+  - Payment verification
+  - Receipt generation
+
+A standard e-commerce process proceeds as follows:
+1. Buyer discovers a product in any compatible application
+2. Product is added to cart
+3. Application checks merchant's preferences and prompts the user to continue the process following those preferences
+4. Shipping details are collected and costs are calculated
+5. Payment is requested
+6. Payment is processed and verified
+7. Order and shipping follow-up conducted using encrypted messages
+
+### Merchant Preferences
+Merchants MAY specify preferences for how they want users to interact with them, including which applications to use and payment methods to accept. These preferences ensure a consistent experience and streamline operations. Merchants indicate their preferences through two mechanisms:
+
+1. Application Preferences ([NIP-89](89.md)):
+- The recommended application MUST publish a kind `31990` event
+- The merchant MUST publish a kind `31989` event recommending that application
+
+2. Payment Preferences:
+- Set via `payment-preference` tag in the merchant's kind `0` event
+- Valid values: `manual | ecash | lud16` 
+- Defaults to `manual` if not specified
+
+Applications implementing this NIP MUST handle preferences as follows:
+
+1. When `payment-preference` is `manual`:
+- If merchant recommends an app: MUST direct users to that app
+- If no app recommendation: Use traditional interactive flow
+
+2. When `payment-preference` is `ecash` or `lud16`:
+- If merchant recommends an app: SHOULD direct users there first, but they MAY also offer to continue if compatible with the payment preference
+- If no recommendations: Use specified payment method directly
+
+3. When no preferences are set:
+- Use traditional interactive flow
+- Buyer sends order
+- Wait for merchant's payment request
+
+Buyers can verify merchant preferences by:
+- Checking kind `31990` events for recommended applications
+- Checking kind `0` events for payment preferences
+
+This verification helps buyers follow merchant-approved paths and avoid potential scams or poor experiences.
 
 ## Events and Kinds
-
 ### Product Listing (Kind: 30402)
 
-The core event type for representing products in the marketplace. Each product listing MUST include basic metadata and MAY include additional details. Products are the core element in a marketplace, their configuration is the source of truth, overriding other possible configurations of other market elements such as collections, not configuration will cascade to products, they have to explicitly reference an attribute to inherit it.
+Products are the core element in a marketplace. Each product listing MUST contain basic metadata and MAY contain additional details. Their configuration is the source of truth, overriding other possible configurations of other market elements such as collections, no configuration is cascaded to products, they MUST explicitly reference an attribute to inherit it.
 
-Content: Product description, markdown is allowed
-Required tags:
+**Content**: Product description, markdown is allowed
+**Required tags**:
 - `d`: Unique product identifier for referencing the listing
 - `title`: Product name/title for display
 - `price`: Price information array `[<amount>, <currency>, <optional frequency>]`
   - amount: Decimal number (e.g., "10.99")
-  - currency: ISO 4217 code (e.g., "USD", "EUR"), or collection coordinates (e.f, "30405:<pubkey>:<d-tag>")
+  - currency: ISO 4217 code (e.g., "USD", "EUR")
   - frequency: Optional subscription interval using ISO 8601 duration units (e.g. 'D' for daily, 'W' for weekly, 'Y' for yearly).
 
-Optional tags:
+**Optional tags**:
 - Product Details:
   - `type`: Product classification `[<type>, <format>]`
     - type: "simple", "variable", or "variation"
@@ -81,7 +121,7 @@ Optional tags:
   - `image`: Product images `[<url>, <dimensions>, <sorting-order>]`, MAY appear multiple times
     - url: Direct image URL
     - dimensions: Optional, in pixels, "<width>x<height>" format, if not present the place in the array should be respected by using an empty string `""`
-    - sorting order: Optional integer for order sorting. It should not rely on a standar start of the order, like `0`, or `1`, it should be sorted independenly of that from lower to higger
+    - sorting order: Optional integer for order sorting. Values are sorted from lowest to highest, independent of starting value (not restricted to start with 0 or 1)
 
 - Physical Properties:
   - `weight`: Product weight `[<value>, <unit>]` using ISO 80000-1
@@ -93,10 +133,12 @@ Optional tags:
 
 - Organization:
   - `t`: Product categories/tags, MAY appear multiple times
+  - `a`: Product reference "30402:<pubkey>:<d-tag>", MUST appear only once to reference parent products in a variable/variation configuration
   - `a`: Collection reference "30405:<pubkey>:<d-tag>", MAY appear multiple times
   - `shipping`: Shipping options, MAY appear multiple times
     - Format: "30406:<pubkey>:<d-tag>" for direct options
     - Format: "30405:<pubkey>:<d-tag>" for collection shipping
+    - `extra-cost`: Optional third element in the array, to add extra cost (in the product's currency) for the shipping method. In case of reference a collection the extra cost should be applied to all shipping options from the collection.
 
 ```jsonc
 {
@@ -117,7 +159,7 @@ Optional tags:
     
     // Media and specs
     ["image", "<url>", "<dimensions>", "<sorting-order>"],
-    ["spec", "<key>", "<value>"],  // Product specifications (e.g., "screen-size", "21 inch"). Cam be present multiple times
+    ["spec", "<key>", "<value>"],  // Product specifications (e.g., "screen-size", "21 inch"). MAY appear multiple times
     
     // Physical properties (for shipping)
     ["weight", "<value>", "<unit>"],  // ISO 80000-1 units (g, kg, etc)
@@ -131,7 +173,7 @@ Optional tags:
     ["t", "<category>"],
     
     // References
-    ["shipping", "<30406|30405>:<pubkey>:<d-tag>"],  // Shipping options or collection
+    ["shipping", "<30406|30405>:<pubkey>:<d-tag>", "<extra-cost>"],  // Shipping options or collection, MAY appear multiple times
     ["a", "30405:<pubkey>:<d-tag>"]  // Product collection
   ]
 }
@@ -143,6 +185,11 @@ Optional tags:
    - Digital products skip shipping requirements
    - Visibility controls product display status
 
+2. Variable products: 
+  - The parent or "root" product should use `variable` as value for `type`
+  - The variations of the parent product should use `variation` as value for `type`. 
+  - Variations MUST include an `a` tag pointing to the `variable` parent product.
+ 
 2. Shipping Rules:
    - Shipping options can be defined directly by pointing to a shipping event, or inherited from collections
    - If the product specifies product-specific shipping, and also from a collection, shipping options MUST be merged.
@@ -152,20 +199,21 @@ Optional tags:
    - Categories ("t" tags) aid in discovery and organization
 
 4. Location Support:
-   - Optional location data aids in local marketplace features
-   - Geohash enables precise location-based searches
+   - Optional location data aids in local marketplace features, they can point to a collection event to inherit it's value
+   - Geohash enables precise location-based searches, they can point to a collection event to inherit it's value
 
 ### Product Collection (Kind: 30405)
-A specialized event type using [NIP-51](51.md) list format to organize related products into groups. Collections enable merchants, or any user to create meaningful product groupings and share common attributes that products can reference.
+A specialized event type using [NIP-51](51.md) like list format to organize related products into groups. Collections allow merchants or any user to create meaningful product groupings and share common attributes that products can also reference, establishing one-to-many relationships.
 
-Required tags:
+**Content**: Optional collection description
+**Required tags**:
 - `d`: Unique collection identifier
 - `name`: Collection display name
 - `a`: Product references `["a", "30402:<pubkey>:<d-tag>"]`
   - Multiple product references allowed
   - References must point to valid product listings
 
-Optional tags:
+**Optional tags**:
 - Display:
   - `image`: Collection banner/thumbnail URL
   - `summary`: Brief collection description
@@ -175,8 +223,7 @@ Optional tags:
   - `g`: Geohash for precise location lookup
 
 - Reference Options:
-  - `shipping`: Available shipping options `["shipping", "30406:<pubkey>:<d-tag>"]`
-  - `currency`: ISO 4217 currency code for collection
+  - `shipping`: Available shipping options `["shipping", "30406:<pubkey>:<d-tag>"]`, MAY appear multiple times
 
 ```jsonc
 {
@@ -198,8 +245,7 @@ Optional tags:
     ["g", "<geohash>"],
     
     // Reference Options
-    ["shipping", "30406:<pubkey>:<d-tag>"],  // Available shipping options
-    ["currency", "<ISO 4217 currency code>"]  // Collection currency
+    ["shipping", "30406:<pubkey>:<d-tag>"],  // Available shipping options, MAY appear multiple times
   ]
 }
 ```
@@ -208,11 +254,10 @@ Optional tags:
 1. Collection Management:
    - Collections can contain any number of products
    - Products can belong to multiple collections
-   - Products MUST explicitly reference collection resources to inherit collection attributes (e.g. shipping, currency, location, geohash).
 
 2. Reference Model:
-   - Collection settings (shipping, currency, location, geohash) serve as references only
-   - Products MUST explicitly reference collection shipping options
+   - Collection settings (shipping, location, geohash) serve as references only
+   - Products MUST explicitly reference collection resources to inherit collection attributes (e.g. shipping, location, geohash).
    - No automatic cascading of settings to products
 
 3. Location Support:
@@ -225,19 +270,19 @@ Products and collections can be saved as private drafts while being prepared for
 ### Shipping Option (Kind: 30406)
 A specialized event type for defining shipping methods, costs, and constraints. Shipping options can be published by merchants or third-party providers (delivery companies, DVMs, etc.) and referenced by product listings or collections.
 
-Content: Optional human-friendly shipping description
-Required tags:
+**Content**: Optional human-friendly shipping description
+**Required tags**:
 - `d`: Unique shipping option identifier
 - `title`: Display title for the shipping method
 - `price`: Base cost array `[<base_cost>, <currency>]`
 - `country`: Array of ISO 3166-1 alpha-2 country codes `[<code1>, <code2>, ...]`
 - `service`: Service type ("standard", "express", "overnight", "pickup")
 
-Optional tags:
+**Optional tags**:
 - Extra details:
   - `carrier`: The name of the carrier that will be used for the delivery
 - Time and Location:
-  - `region`: Array of ISO 3166-2 region codes `[<code1>, <code2>, ...]`
+  - `region`: Array of ISO 3166-2 region codes for which shipping method is available `[<code1>, <code2>, ...]`
   - `duration`: Delivery window `[<min>, <max>, <unit>]` using ISO 8601 duration units
     - min: Minimum delivery time
     - max: Maximum delivery time
@@ -252,9 +297,9 @@ Optional tags:
   - `dim-max`: Maximum dimensions `[<l>x<w>x<h>, <unit>]`
 
 - Price Calculations:
-  - `price-weight`: Per weight pricing `[<price>, <currency>, <unit>]`
-  - `price-volume`: Per volume pricing `[<price>, <currency>, <unit>]`
-  - `price-distance`: Per distance pricing `[<price>, <currency>, <unit>]`
+  - `price-weight`: Per weight pricing `[<price>, <unit>]`
+  - `price-volume`: Per volume pricing `[<price>, <unit>]`
+  - `price-distance`: Per distance pricing `[<price>, <unit>]`
 
 ```jsonc
 {
@@ -285,9 +330,9 @@ Optional tags:
     ["dim-max", "<l>x<w>x<h>", "<unit>"],
     
     // Price Calculations
-    ["price-weight", "<price>", "<currency>", "<unit>"],
-    ["price-volume", "<price>", "<currency>", "<unit>"],
-    ["price-distance", "<price>", "<currency>", "<unit>"]
+    ["price-weight", "<price>", "<unit>"],
+    ["price-volume", "<price>", "<unit>"],
+    ["price-distance", "<price>", "<unit>"]
   ]
 }
 ```
@@ -343,7 +388,6 @@ Standard Shipping:
 2. Shipping Rules:
    - Physical pickup requires location and/or geohash
    - Weight/dimension constraints use ISO 80000-1 units
-   - Price calculations can combine multiple factors
 
 3. Client Behavior:
    - Group options by service type and location
@@ -375,9 +419,23 @@ The payment request flow can operate in two modes:
 2. Service-assisted: Merchant's payment service handles requests. Payment request is initiated by the buyer
 
 ### Message Types
-
 #### 1. Order Creation
-Sent by buyer to initiate order
+Sent by buyer to initiate order process.
+
+**Required tags:**
+- `p`: Merchant's public key
+- `subject`: Human-friendly subject line for order information
+- `type`: Must be "1" to indicate order creation
+- `order`: Unique identifier for the order
+- `amount`: Total order amount in satoshis
+- `item`: Product reference in format "30402:<pubkey>:<d-tag>" with quantity. MAY appear multiple times
+
+**Optional tags:**
+- `shipping`: Reference to shipping option "30406:<pubkey>:<d-tag>"
+- `address`: Shipping address details
+- `email`: Customer email for contact
+- `phone`: Customer phone number for contact
+- Other optional tags can be added with more details from the customer
 
 ```jsonc
 {
@@ -404,12 +462,33 @@ Sent by buyer to initiate order
   "content": "Order notes or special requests"
 }
 ```
-
 #### 2. Payment Request
-There are two variants depending on payment processing mode, manual processing, or service processing, they are described below. Once the payment request is received and payed by the buyer a payment receipt MUST be sent to the merchant using a kind `17` dm as described below
+There are two variants depending on payment processing mode: manual or automatic processing. After the buyer pays the payment request, they MUST send a payment receipt to the merchant using a kind:`17` dm.
 
 ##### Manual Processing (merchant → buyer)
-In this mode, the merchant have to manually send the payment request to the buyer. Both merchants and users should be aware of the limitations of this manual payment request processing, where the merchant needs to initiate the payment request. For this to happen, the merchant must be online or have its own mechanism in place to provide payment requests, such as a service listening for new orders and automatically sending payment requests. In any case, users should be conscious that the total price of the order may vary between the time they create the order and the time the merchant sends the payment request. It is up to the merchant to decide whether to honor the original total price from when the order was created or update it when sending the payment request. In the case the buyer doesn't conforms with a difference in the price it can update the status of the order to "cancelled"
+
+In this mode, the merchant manually initiates the payment by sending a payment request to the buyer. This requires either:
+- The merchant being online to process requests, or
+- Having an automated system for processing payment requests, which can be run by the merchant or a service they rely on according to merchant preferences.
+
+Important considerations:
+- Merchant shouldn't have a recommended application in their merchant's preferences
+- Final price may differ from the order creation time
+- Merchants decide whether to honor original prices
+- Buyers can cancel orders if they don't agree with price changes
+
+**Required tags:**
+- `p`: Buyer's public key
+- `subject`: Human-friendly subject line for order payment requests
+- `type`: Must be "2" to indicate payment request
+- `order`: The unique order identifier from the original order
+- `amount`: Total payment amount in satoshis
+
+**Optional tags:**
+- `payment`: Payment method details, can appear multiple times for different options:
+  - Lightning format: `["payment", "lightning", "<bolt11-invoice or lud16>"]`
+  - Bitcoin format: `["payment", "bitcoin", "<btc-address>"]`
+  - eCash format: `["payment", "ecash", "<cashu-req>"]`
 
 ```jsonc
 {
@@ -425,14 +504,14 @@ In this mode, the merchant have to manually send the payment request to the buye
     // Payment options (can include multiple)
     ["payment", "lightning", "<bolt11-invoice|lud16>"],
     ["payment", "bitcoin", "<btc-address>"],
-    ["payment", "ecash", "<mint-url>"],
+    ["payment", "ecash", "<cashu-req>"],
   ],
   "content": "Payment instructions and notes"
 }
 ```
 
 ##### Automatic Processing (buyer → merchant)
-In this mode, the merchant have to set valid payment options in its kind:`0` event, or use a service to send payment requests without manual interaction. The key difference is that the buyer initiates the payment request using information provided by the merchant. To enhance security and verifiability, the merchant SHOULD use [NIP-89](89.md) "application handlers" to define their preferrece in what service their buyers should use, and prevent fake services from issuing fraudulent payment requests. Merchants should be concious about the limitations of relying in an automatic payment request service, since users MUST use the recommended service announced by the merchant using [NIP-89](89.md). In the case their users dont use the preferred merchant service they MAY not receive the information to proceed with the payment request.
+In this mode, the merchant MUST set valid payment options in their kind:`0` event (such as `cashu` or `lud16`). The key difference is that the buyer initiates the payment request using information provided by the merchant. For merchants using `manual` payment preference, they SHOULD use [NIP-89](89.md) to specify their preferred payment processing service, which can then automatically handle payment requests on their behalf, as described in the merchant preferences section above.
 
 ```jsonc
 {
@@ -448,16 +527,26 @@ In this mode, the merchant have to set valid payment options in its kind:`0` eve
     // Payment details from service
     ["payment", "lightning", "<bolt11-invoice|bolt12-offer>"],
     ["payment", "bitcoin", "<btc-address>"],
-    ["payment", "ecash", "<mint-url>"],
+    ["payment", "ecash", "<cashu-req>"],
   ],
   "content": "Service-generated payment details"
 }
 ```
 
 #### 3. Order Status Updates
-Once the merchant receive the payment the status MUST update to "confirmed". Order status update can be sent as soon the acknowledges a new order, the status should be set as "pending". The "pending" status is an optional state that can be skipped and can be started as "confirmed" once the merchant receives the payment.
+Once the merchant receives payment, they MUST update the status to "confirmed". Status updates can be sent as soon as a new order is acknowledged, initially setting the status to "pending". The "pending" status is optional and can be skipped, starting directly with "confirmed" once payment is received.
 
-Sent by merchant to update order status
+**Required tags:**
+- `p`: Buyer's or merchant's public key
+- `subject`: Human-friendly subject line for status updates
+- `type`: Must be "3" to indicate status update
+- `order`: The original order identifier
+- `status`: Current order status:
+  - `pending`: Order received but awaiting payment
+  - `confirmed`: Payment received and verified
+  - `processing`: Order is being prepared
+  - `completed`: Order fulfilled
+  - `cancelled`: Order cancelled by either party
 
 ```jsonc
 {
@@ -471,13 +560,12 @@ Sent by merchant to update order status
     
     // Status information
     ["status", "<order-status>"],  // pending|confirmed|processing|completed|cancelled
-    ["date", "<unix-timestamp>"],
   ],
   "content": "Human readable status update"
 }
 ```
 
-An order status update can be sent by the buyer in case it wants to cancel the order, this MUST be done if the order havent beign set with status "confirmed"
+Buyers may also send a status update to cancel an order, ideally before the status has been set to "confirmed":
 
 ```jsonc
 {
@@ -491,14 +579,29 @@ An order status update can be sent by the buyer in case it wants to cancel the o
     
     // Status information
     ["status", "<order-status>"],  // cancelled
-    ["date", "<unix-timestamp>"],
   ],
   "content": "Human readable status update"
 }
 ```
 
 #### 4. Shipping Updates
-Sent by merchant with delivery information (Kind 16)
+Sent by merchant to provide delivery tracking and status information.
+
+**Required tags:**
+- `p`: Buyer's public key
+- `subject`: Human-friendly subject line for shipping updates
+- `type`: Must be "4" to indicate shipping update
+- `order`: The original order identifier
+- `status`: Current shipping status:
+  - `processing`: Order is being prepared for shipping
+  - `shipped`: Package has been handed to carrier
+  - `delivered`: Successfully delivered to destination
+  - `exception`: Delivery issue or delay encountered
+
+**Optional tags:**
+- `tracking`: Carrier's tracking number
+- `carrier`: Name of shipping carrier
+- `eta`: Expected delivery time as unix timestamp
 
 ```jsonc
 {
@@ -536,7 +639,20 @@ Used for any order-related messages (Kind 14)
 ```
 
 #### 6. Payment Receipt
-Sent by buyer to confirm payment (Kind 17)
+Sent by buyer to confirm payment completion. The receipt can include proof of payment from any payment system, including traditional fiat gateways.
+
+**Required tags:**
+- `p`: Merchant's public key
+- `subject`: Human-friendly subject line for order receipt
+- `order`: The original order identifier
+- `payment`: Payment proof details (at least one required):
+  - Generic format: `["payment", "<medium>", "<medium-reference>", "<proof>"]`
+  - Common examples:
+    - Lightning: `["payment", "lightning", "<invoice>", "<preimage>"]`
+    - Bitcoin: `["payment", "bitcoin", "<address>", "<txid>"]`
+    - eCash: `["payment", "ecash", "<mint-url>", "<proof>"]`
+    - Fiat: `["payment", "fiat", "<some-id>", "<some-proof>"]`
+- `amount`: Payment amount
 
 ```jsonc
 {
@@ -548,12 +664,13 @@ Sent by buyer to confirm payment (Kind 17)
     ["order", "<order-id>"],
     
     // Payment proof (one required)
+    ["payment", "<medium>", "<medium-reference>", "<proof>"],
     ["payment", "lightning", "<invoice>", "<preimage>"],
     ["payment", "bitcoin", "<address>", "<txid>"],
     ["payment", "ecash", "<mint-url>", "<proof>"],
-    
+    ["payment", "fiat", "<some-id>", "<some-proof>"],
+
     // Metadata
-    ["date", "<unix-timestamp>"],
     ["amount", "<amount>"]
   ],
   "content": "Payment confirmation details"
@@ -565,8 +682,8 @@ Sent by buyer to confirm payment (Kind 17)
    - Receipts should include verifiable proofs
 
 2. Payment Processing:
-   - Direct mode provides more flexibility
-   - Service mode enables faster processing and convenience
+   - Manual mode provides more flexibility
+   - Automatic mode enables faster processing and convenience
    - Multiple payment options can be offered
 
 3. Status Tracking:
@@ -621,42 +738,59 @@ Total Score = (Thumb × 0.5) + (0.5 × (∑(Category Ratings) ÷ Number of Categ
 
 #### Notes
 1. Rating System:
-   - Primary thumb rating is required
+   - Primary thumb rating is required, it determines the overall an overall rating.
    - Additional categories are optional
-   - Scores support fractional values (0-1)
+   - Scores support fractional values between 0-1
    - Custom categories can be added
 
+### Payment Flow Details
 
-### Payment Flow Notes
-A payment preference can be added to the kind:`0` event as a tag `["payment-preference": "<manual | ecash | lud16>"]`, where if not present it should default to `manual` meaning that the merchant should provide the payment request at the proper time. By using this `payment-preference` merchants can specify how they want to be paid. In the case the merchant is using a service to process orders and send payment request the payment-preference MUST be `manual`, this setting togheter with the [NIP-89](89.md) "recommended application handler" will provide the information about how to proceed within a merchant. If the recommended application handler its not present and the `payment-preference` is manual means that the merchant wants to process the orders manually independently of what service the buyers are using. In the case there is a different `payment-preference` than manual, the merchant can be paid automatically either with ecash tokens locked to the merchant's public key or to the `lud16` address present in the merchant's kind:`0` event. In ANY case the recommended application handler of the merchant should be considered to provide the desired experience that the merchant expects for their users.
+#### Payment Preferences
+Merchants can specify their payment preferences in their kind:`0` event using the `payment-preference` tag:
+```
+["payment-preference", "<manual | ecash | lud16>"]
+```
 
-Order of suggested acceptance based on simplicity:
+If not present, it defaults to `manual`. The preferences are processed in this order of complexity:
+1. Manual (default): Merchant provides payment requests directly
+2. eCash: Ideally the merchant have a kind `10019` event to know what mint they prefer.
+  - If event kind `10019` is not present, payment can be made by sending the token embedded directly in the order receipt message.
+3. Lightning: Requires `lud16` or related lightning fields in kind `0`
 
-1) Manual (default)
+#### Payment Processing Scenarios
 
-2) eCash
+1. **Manual Processing**
+   - Merchant initiates payment request
+   - Used when no application is recommended or automatic preferences are set
+   - Merchant must manually send payment requests
+   - Buyer waits for merchant's payment instructions
+   - Merchants can have their own service that listens for new orders and then sends the payment request
 
-3) Lightning
+2. **Automatic Processing**
+   - Buyer initiates payment request
+   - Requires a valid `payment-preference` in merchant's kind `0`
+   - Service-Based Processing processing if `payment-preference` is `manual` and the merchant have a recommended application
+   - Supports automatic payments via:
+     - eCash tokens (locked to merchant's pubkey)
+     - Lightning (using merchant's `lud16` address)
 
-4.1. When a merchant has a payment server:
-    - The buyer can immediately send a payment request message containing payment details obtained from the merchant's server
-    - This eliminates the need to wait for the merchant to come online
-    - The payment server is responsible for generating valid payment details and monitoring for completion
-4.2 When no payment server is available:
-    - The traditional flow is used where the merchant sends the payment request
-    - The buyer waits for the merchant's response before proceeding with payment
-43 In both cases:
-    - The payment receipt is sent by the buyer after completing payment
-    - All payment details should be verified against the original order
-    - The message direction is clearly indicated by the `p` tag
+3. **Service-Based Processing**
+   - Merchant MUST set `payment-preference` to `manual`
+   - Merchant SHOULD have a [NIP-89](89.md) kind `31989` event recommending their preferred service
+   - Buyers can immediately request payment using the service
+   - Service handles payment details and completion monitoring
 
-### Marketplace Server Role
+For all scenarios:
+- Buyer MUST send payment receipt after completion
+- Message direction is determined by `p` tag
+- Merchant's [NIP-89](89.md) application preferences SHOULD be respected
 
-Marketplace services can optionally facilitate the order processing and payment request by:
+### Marketplace Application Role
+Marketplace applications can optionally facilitate the order processing and payment request by:
 
 1. Generating payment requests based on merchant preferences when buyers initiate orders
-2. Verifying payments and generating receipts automatically
-3. Managing inventory and order status updates
+2. Verifying payments and generating receipts automatically by prompting the buyer to sign the event
+3. Helping merchants managing inventory and order status updates
 4. Coordinating shipping information
 5. Price calculations
 
