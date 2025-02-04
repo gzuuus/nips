@@ -84,7 +84,7 @@ Applications implementing this NIP MUST handle preferences as follows:
 
 1. When `payment-preference` is `manual`:
 - If merchant recommends an app: MUST direct users to that app
-- If no app recommendation: Use traditional interactive flow
+- If no app recommendation: Use traditional interactive flow (buyer places order and waits for merchant's payment request)
 
 2. When `payment-preference` is `ecash` or `lud16`:
 - If merchant recommends an app: SHOULD direct users there first, but they MAY also offer to continue if compatible with the payment preference
@@ -92,8 +92,8 @@ Applications implementing this NIP MUST handle preferences as follows:
 
 3. When no preferences are set:
 - Use traditional interactive flow
-- Buyer sends order
-- Wait for merchant's payment request
+   - Buyer sends order
+   - Wait for merchant's payment request
 
 Buyers can verify merchant preferences by:
 - Checking kind `31990` events for recommended applications
@@ -196,9 +196,9 @@ Products are the core element in a marketplace. Each product listing MUST contai
    - Visibility controls product display status
 
 2. Variable products: 
-  - The parent or "root" product should use `variable` as value for `type`
-  - The variations of the parent product should use `variation` as value for `type`. 
-  - Variations MUST include an `a` tag pointing to the `variable` parent product.
+   - The parent or "root" product should use `variable` as value for `type`
+   - The variations of the parent product should use `variation` as value for `type`. 
+   - Variations MUST include an `a` tag pointing to the `variable` parent product.
  
 2. Shipping Rules:
    - Shipping options can be defined directly by pointing to a shipping event, or inherited from collections
@@ -216,6 +216,7 @@ Products are the core element in a marketplace. Each product listing MUST contai
 A specialized event type using [NIP-51](51.md) like list format to organize related products into groups. Collections allow merchants or any user to create meaningful product groupings and share common attributes that products can also reference, establishing one-to-many relationships.
 
 **Content**: Optional collection description
+
 **Required tags**:
 - `d`: Unique collection identifier
 - `name`: Collection display name
@@ -281,6 +282,7 @@ Products and collections can be saved as private drafts while being prepared for
 A specialized event type for defining shipping methods, costs, and constraints. Shipping options can be published by merchants or third-party providers (delivery companies, DVMs, etc.) and referenced by product listings or collections.
 
 **Content**: Optional human-friendly shipping description
+
 **Required tags**:
 - `d`: Unique shipping option identifier
 - `title`: Display title for the shipping method
@@ -433,6 +435,8 @@ The payment request flow can operate in two modes:
 #### 1. Order Creation
 Sent by buyer to initiate order process.
 
+**Content:** (Optional) Human readable order notes or special requests
+
 **Required tags:**
 - `p`: Merchant's public key
 - `subject`: Human-friendly subject line for order information
@@ -487,6 +491,8 @@ Important considerations:
 - Final price may differ from the order creation time
 - Merchants decide whether to honor original prices
 - Buyers can cancel orders if they don't agree with price changes
+
+**Content:** (Optional) Human readable payment instructions and notes
 
 **Required tags:**
 - `p`: Buyer's public key
@@ -547,6 +553,8 @@ In this mode, the merchant MUST set valid payment options in their kind:`0` even
 #### 3. Order Status Updates
 Once the merchant receives payment, they MUST update the status to "confirmed". Status updates can be sent as soon as a new order is acknowledged, initially setting the status to "pending". The "pending" status is optional and can be skipped, starting directly with "confirmed" once payment is received.
 
+**Content:** (Optional) Human readable status update
+
 **Required tags:**
 - `p`: Buyer's or merchant's public key
 - `subject`: Human-friendly subject line for status updates
@@ -597,6 +605,8 @@ Buyers may also send a status update to cancel an order, ideally before the stat
 
 #### 4. Shipping Updates
 Sent by merchant to provide delivery tracking and status information.
+
+**Content:** (Optional) Human readable shipping status and tracking information
 
 **Required tags:**
 - `p`: Buyer's public key
@@ -652,6 +662,8 @@ Used for any order-related messages (Kind 14)
 #### 6. Payment Receipt
 Sent by buyer to confirm payment completion. The receipt can include proof of payment from any payment system, including traditional fiat gateways.
 
+**Content:** (Optional) Human readable payment confirmation details
+
 **Required tags:**
 - `p`: Merchant's public key
 - `subject`: Human-friendly subject line for order receipt
@@ -706,13 +718,15 @@ Sent by buyer to confirm payment completion. The receipt can include proof of pa
 
 Product reviews follow [NIP-85](https://github.com/nostr-protocol/nips/blob/b1432b705f553bde6c4eb5fcfde8525d2913b477/85.md) and [QTS](https://habla.news/u/arkinox@arkinox.tech/DLAfzJJpQDS4vj3wSleum) guidelines with additional marketplace-specific rating criteria. Reviews provide structured feedback about products, merchants, and the overall purchase experience.
 
-Required tags:
+**Content:** Detailed review text
+
+**Required tags:**
 - `d`: Reference to product `["d", "a:30402:<merchant-pubkey>:<product-d-tag>"]`
 - `rating`: Primary rating `["rating", "<score>", "thumb"]`
   - score: 0 (negative) to 1 (positive)
   - "thumb" label MUST be present as primary rating
 
-Optional tags:
+**Optional tags:**
 - Additional Ratings:
   - `rating`: Category scores `["rating", "<score>", "<category>"]`
     - score: 0 to 1 (supports fractional values)
