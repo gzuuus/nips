@@ -5,22 +5,27 @@ Marketplace Protocol
 ---------------------------
 
 `draft` `optional`
-This NIP defines a comprehensive protocol for implementing decentralized marketplaces on Nostr. It provides a complete e-commerce framework while maintaining protocol simplicity and interoperability.
+A protocol specification for decentralized marketplaces on Nostr that provides an interoperable, full-featured e-commerce framework.
 
-## Protocol Requirements
+## Table of Contents
+1. Protocol Requirements
+2. Core Protocol Components
+3. Events and Kinds
+4. Order Communication Flow and Payment Processing
+5. Product Reviews
+6. Implementation Guidelines
 
-The protocol is structured into required core components and optional components:
+## 1. Protocol Requirements
+
+The protocol defines both required core components and optional features to support diverse marketplace needs.
 
 ### Required Components
-Implementations MUST support these core features to be considered compatible:
+Implementations MUST support the following core features:
 
 - Product listing events (Kind: 30402)
-- Product collection events (Kind: 30405) specifically for product to collection lookup references
+- Product collection events (Kind: 30405) for product-to-collection references
 - Merchant's preferences
 - Order communication and processing via [NIP-17](17.md) encrypted messages
-
-#### Watch-only clients
-Watch-only clients are applications that allow users to display products without implementing full e-commerce capabilities. These clients don't need to support all required components - product rendering alone can be sufficient. However, ideally, they should also handle logic for looking up collections, reviews, and shipping options. Support for order communication using [NIP-17](17.md) is optional.
 
 ### Optional Components
 These features MAY be implemented based on specific marketplace needs:
@@ -32,32 +37,36 @@ These features MAY be implemented based on specific marketplace needs:
 - Product reviews (Kind: 31555)
 - Service assisted order and payment processing
 
+#### Watch-only clients
+Watch-only clients are applications that allow users to display products without implementing full e-commerce capabilities. These clients don't need to support all required components - product rendering alone can be sufficient. However, ideally, they should also handle logic for looking up collections, reviews, and shipping options. Support for order communication using [NIP-17](17.md) is optional.
+
+## 2. Core Protocol Components
+
 ### Core Flows
 1. Merchant Preferences
-  - Usage of [NIP-89](89.md) for merchant's application preferences
-  - Usage of `payment-preference` tag in merchant's kind `0` to determine payment method preferences
+   - Application preferences via [NIP-89](89.md)
+   - Payment method preferences via kind `0` tags
 
-2. Order Communication Flow
-  - Encrypted messaging between buyer and seller
-  - Order status updates and confirmations
+2. Order Processing
+   - Encrypted buyer-seller communication
+   - Status updates and confirmations
    
-3. Shipping Flow
-  - Shipping options and pricing (Kind: 30406)
-  - Geographic restrictions and zones
+3. Shipping
+   - Option definition and pricing
+   - Geographic restrictions
    
-4. Payment Flow
-  - Multiple payment method support
-  - Payment verification
-  - Receipt generation
+4. Payment
+   - Multiple payment methods
+   - Verification and receipts
 
-A standard e-commerce process proceeds as follows:
-1. Buyer discovers a product in any compatible application
-2. Product is added to cart
-3. Application checks merchant's preferences and prompts the user to continue the process following those preferences
-4. Shipping details are collected and costs are calculated
-5. Payment is requested
-6. Payment is processed and verified
-7. Order and shipping follow-up conducted using encrypted messages
+Standard e-commerce flow:
+1. Product discovery
+2. Cart addition
+3. Merchant preference verification
+4. Shipping calculation
+5. Payment processing
+6. Order confirmation
+7. Encrypted message follow-up
 
 ### Merchant Preferences
 Merchants MAY specify preferences for how they want users to interact with them, including which applications to use and payment methods to accept. These preferences ensure a consistent experience and streamline operations. Merchants indicate their preferences through two mechanisms:
@@ -92,7 +101,8 @@ Buyers can verify merchant preferences by:
 
 This verification helps buyers follow merchant-approved paths and avoid potential scams or poor experiences.
 
-## Events and Kinds
+## 3. Events and Kinds
+
 ### Product Listing (Kind: 30402)
 
 Products are the core element in a marketplace. Each product listing MUST contain basic metadata and MAY contain additional details. Their configuration is the source of truth, overriding other possible configurations of other market elements such as collections, no configuration is cascaded to products, they MUST explicitly reference an attribute to inherit it.
@@ -394,7 +404,8 @@ Standard Shipping:
    - Use geohash for distance-based sorting
    - Validate package constraints before offering options
 
-## Order Communication Flow
+## 4. Order Communication Flow and Payment Processing
+
 Order processing and status updates use [NIP-17](17.md) encrypted direct messages, with three event kinds serving different purposes:
 
 - Kind `14`: Regular communication between parties
@@ -691,7 +702,8 @@ Sent by buyer to confirm payment completion. The receipt can include proof of pa
    - Include timestamps for all updates
    - Provide clear user messages
 
-### Product Reviews (Kind: 31555)
+## 5. Product Reviews (Kind: 31555)
+
 Product reviews follow [NIP-85](https://github.com/nostr-protocol/nips/blob/b1432b705f553bde6c4eb5fcfde8525d2913b477/85.md) and [QTS](https://habla.news/u/arkinox@arkinox.tech/DLAfzJJpQDS4vj3wSleum) guidelines with additional marketplace-specific rating criteria. Reviews provide structured feedback about products, merchants, and the overall purchase experience.
 
 Required tags:
@@ -742,6 +754,8 @@ Total Score = (Thumb × 0.5) + (0.5 × (∑(Category Ratings) ÷ Number of Categ
    - Additional categories are optional
    - Scores support fractional values between 0-1
    - Custom categories can be added
+
+## 6. Implementation Guidelines
 
 ### Payment Flow Details
 
@@ -796,7 +810,7 @@ Marketplace applications can optionally facilitate the order processing and paym
 
 This provides a smoother user experience while maintaining the ability for direct merchant-buyer communication as a fallback mechanism.
 
-## Notes and Considerations
+### Notes and Considerations
 
 1. Tags are used for all structured, machine-readable data to facilitate easier parsing and filtering.
 
